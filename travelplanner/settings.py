@@ -141,7 +141,7 @@ GEOAPIFY_API_KEY = os.getenv("GEOAPIFY_API_KEY")  # Replace with your free key
 
 # No AI API - Using local itinerary generation
 # Email Configuration (Use Gmail SMTP - Free)
-EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
