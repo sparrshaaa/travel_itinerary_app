@@ -3,3 +3,27 @@ python --version
 pip --version
 python -m pip install Django
 python -m django --version
+
+
+changes in code -> reflect on server
+git add .
+git commit -m "nfdv"
+git push origin main
+
+server console->
+cd
+git pull origin main
+
+
+apply changes->
+activate venv
+source venv/bin/activate
+
+if changed models
+python manage.py makemigrations
+python manage.py migrate
+
+if changed css/static
+python manage.py collectstatic
+
+Reload website
