@@ -41,12 +41,20 @@ def register_view(request):
             username = form.cleaned_data['username']
             phone_number = form.cleaned_data.get('phone_number', '')
 
-            user, created = User.objects.get_or_create(
-                username=username, 
-                email=email,
-                defaults={'is_active': True}
-            )
-            
+            user = User.objects.filter(email=email).first()
+
+            if user:
+                created = False
+            else:
+                user = User.objects.create_user(
+                    username=email,   # use email as username (important)
+                    email=email
+                )
+                created = True
+            if created:
+                messages.success(request, "Account created successfully. OTP sent.")
+            else:
+                messages.info(request, "Welcome back! OTP sent for login.")
             # Store phone number in session for later use
             if phone_number:
                 request.session['phone_number'] = phone_number
@@ -64,8 +72,10 @@ def register_view(request):
                 )
                 messages.info(request, f"OTP sent to {email}. Please check your inbox.")
             except Exception as e:
-                messages.error(request, f"Error sending email: {e}")
-                return redirect('register')
+                # messages.error(request, f"Error sending email: {e}")
+                # return redirect('register')
+                 print("🔥 EMAIL ERROR:", e)   # 👈 IMPORTANT
+                 raise e                      # 👈 THIS WILL SHOW REAL ERROR
 
             request.session['email'] = email
             return redirect('verify_otp')
@@ -87,7 +97,9 @@ def verify_otp_view(request):
         return redirect('register')
 
     if request.method == 'POST':
-        form = OTPForm(request.POST)
+        form = OTPForm(request.POST)   # ✅ FIXED ORDER
+        print("FORM ERRORS:", form.errors)
+
         if form.is_valid():
             otp = form.cleaned_data['otp']
             if otp == otp_obj.otp:
@@ -132,6 +144,7 @@ def resend_otp_view(request):
 
 # ---------------------- GENERATE ITINERARY WITH OPENROUTER ----------------------
 def generate_itinerary_with_ai(destination, days, budget, travelers, interests):
+    print("OPENROUTER KEY:", OPENROUTER_API_KEY)
     """Generate travel itinerary using OpenRouter AI"""
     
     prompt = f"""
@@ -169,11 +182,13 @@ def generate_itinerary_with_ai(destination, days, budget, travelers, interests):
     try:
         headers = {
             "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:8000" ,  # 👈 REQUIRED
+            "X-Title": "Travel Planner App"            # 👈 REQUIRED
         }
         
         payload = {
-            "model": "openai/gpt-3.5-turbo",
+            "model": "openai/gpt-4o-mini",
             "messages": [
                 {
                     "role": "user",
@@ -190,11 +205,27 @@ def generate_itinerary_with_ai(destination, days, budget, travelers, interests):
             timeout=30
         )
         
+        # if response.status_code == 200:
+        #     data = response.json()
+        #     itinerary_text = data['choices'][0]['message']['content']
+            
+        #     # Extract JSON from response
+        #     try:
+        #         start_idx = itinerary_text.find('{')
+        #         end_idx = itinerary_text.rfind('}') + 1
+        #         json_str = itinerary_text[start_idx:end_idx]
+        #         itinerary_data = json.loads(json_str)
+        #         return itinerary_data
+        #     except json.JSONDecodeError:
+        #         return {"raw_itinerary": itinerary_text}
+        
+        print("STATUS CODE:", response.status_code)
+        print("FULL RESPONSE:", response.text)
+
         if response.status_code == 200:
             data = response.json()
             itinerary_text = data['choices'][0]['message']['content']
             
-            # Extract JSON from response
             try:
                 start_idx = itinerary_text.find('{')
                 end_idx = itinerary_text.rfind('}') + 1
@@ -203,7 +234,10 @@ def generate_itinerary_with_ai(destination, days, budget, travelers, interests):
                 return itinerary_data
             except json.JSONDecodeError:
                 return {"raw_itinerary": itinerary_text}
-        
+
+        else:
+            return {"error": response.text}   # 👈 SHOW REAL ERROR
+                
         return {"error": "Failed to generate itinerary"}
     
     except Exception as e:
@@ -414,6 +448,7 @@ def dashboard_view(request):
                 # 1️⃣ Fetch weather data
                 weather_url = f"https://api.openweathermap.org/data/2.5/weather?q={trip.destination}&appid={OPENWEATHER_API}&units=metric"
                 weather_resp = requests.get(weather_url)
+                
                 if weather_resp.status_code == 200:
                     weather_data = weather_resp.json()
                     temp = weather_data['main']['temp']
@@ -478,10 +513,18 @@ def dashboard_view(request):
                     interests=trip.interests
                 )
                 
-                if 'error' not in itinerary_data:
-                    trip.itinerary = json.dumps(itinerary_data)
-                else:
+                # if 'error' not in itinerary_data:
+                #     trip.itinerary = json.dumps(itinerary_data)
+                # else:
+                #     trip.itinerary = "Itinerary generation failed"
+                print("AI RESPONSE:", itinerary_data)
+
+                if not itinerary_data or 'error' in itinerary_data:
+                    print("❌ AI FAILED")
                     trip.itinerary = "Itinerary generation failed"
+                else:
+                    print("✅ AI SUCCESS")
+                    trip.itinerary = json.dumps(itinerary_data)
 
                 trip.save()
                 messages.success(request, "Trip planned successfully! You can now book and get tickets.")
@@ -490,9 +533,13 @@ def dashboard_view(request):
                 return redirect('trip_detail', trip_id=trip.id)
 
             except requests.exceptions.RequestException as e:
-                messages.error(request, f"API error: {e}")
+                # messages.error(request, f"API error: {e}")
+                print("🔥 API ERROR:", e)
+                raise e
             except Exception as e:
-                messages.error(request, f"Something went wrong: {e}")
+                # messages.error(request, f"Something went wrong: {e}")
+                 print("🔥 GENERAL ERROR:", e)   # 👈 ADD THIS
+                 raise e 
 
     return render(request, 'dashboard.html', {
         'form': form, 
